@@ -53,6 +53,7 @@
 
 #if SHERPA_ONNX_ENABLE_AXERA
 #include "sherpa-onnx/csrc/axera/offline-sense-voice-model-axera.h"
+#include "sherpa-onnx/csrc/axera/offline-paraformer-model-axera.h"
 #endif
 
 #if SHERPA_ONNX_ENABLE_AXCL
@@ -112,6 +113,10 @@ std::unique_ptr<OfflineRecognizerImpl> OfflineRecognizerImpl::Create(
     if (!config.model_config.sense_voice.model.empty()) {
       return std::make_unique<
           OfflineRecognizerSenseVoiceTplImpl<OfflineSenseVoiceModelAxera>>(
+          config);
+    } else if (!config.model_config.paraformer.model.empty()) {
+      return std::make_unique<
+          OfflineRecognizerParaformerTplImpl<OfflineParaformerModelAxera>>(
           config);
     } else {
       SHERPA_ONNX_LOGE(
@@ -473,6 +478,10 @@ std::unique_ptr<OfflineRecognizerImpl> OfflineRecognizerImpl::Create(
     if (!config.model_config.sense_voice.model.empty()) {
       return std::make_unique<
           OfflineRecognizerSenseVoiceTplImpl<OfflineSenseVoiceModelAxera>>(
+          mgr, config);
+    } else if (!config.model_config.paraformer.model.empty()) {
+      return std::make_unique<
+          OfflineRecognizerParaformerTplImpl<OfflineParaformerModelAxera>>(
           mgr, config);
     } else {
       SHERPA_ONNX_LOGE(

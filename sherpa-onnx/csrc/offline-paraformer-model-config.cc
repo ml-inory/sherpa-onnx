@@ -61,6 +61,28 @@ bool OfflineParaformerModelConfig::Validate() const {
     return true;
   }
 
+  if (EndsWith(model, ".axmodel")) {
+    std::vector<std::string> filenames;
+    SplitStringToVector(model, ",", false, &filenames);
+    if (filenames.size() != 3) {
+      SHERPA_ONNX_LOGE(
+          "For Axera, you should pass "
+          "/path/encoder.axmodel,/path/predictor.axmodel,/path/decoder.axmodel. "
+          "Given '%s'",
+          model.c_str());
+      return false;
+    }
+
+    for (const auto &name : filenames) {
+      if (!FileExists(name)) {
+        SHERPA_ONNX_LOGE("Paraformer model '%s' does not exist", name.c_str());
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   if (EndsWith(model, ".rknn")) {
     std::vector<std::string> filenames;
     SplitStringToVector(model, ",", false, &filenames);
