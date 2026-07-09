@@ -15,6 +15,10 @@
 #include "rawfile/raw_file_manager.h"
 #endif
 
+#if SHERPA_ONNX_ENABLE_AXERA
+#include "sherpa-onnx/csrc/axera/silero-vad-model-axera.h"
+#endif
+
 #if SHERPA_ONNX_ENABLE_RKNN
 #include "sherpa-onnx/csrc/rknn/silero-vad-model-rknn.h"
 #endif
@@ -26,6 +30,23 @@
 namespace sherpa_onnx {
 
 std::unique_ptr<VadModel> VadModel::Create(const VadModelConfig &config) {
+  if (config.provider == "axera") {
+#if SHERPA_ONNX_ENABLE_AXERA
+    if (!config.silero_vad.model.empty()) {
+      return std::make_unique<SileroVadModelAxera>(config);
+    } else {
+      SHERPA_ONNX_LOGE("Only silero-vad is supported for Axera at present");
+      SHERPA_ONNX_EXIT(-1);
+    }
+#else
+    SHERPA_ONNX_LOGE(
+        "Please rebuild sherpa-onnx with -DSHERPA_ONNX_ENABLE_AXERA=ON if you "
+        "want to use axera.");
+    SHERPA_ONNX_EXIT(-1);
+    return nullptr;
+#endif
+  }
+
   if (config.provider == "rknn") {
 #if SHERPA_ONNX_ENABLE_RKNN
     if (!config.silero_vad.model.empty()) {
@@ -58,6 +79,23 @@ std::unique_ptr<VadModel> VadModel::Create(const VadModelConfig &config) {
 template <typename Manager>
 std::unique_ptr<VadModel> VadModel::Create(Manager *mgr,
                                            const VadModelConfig &config) {
+  if (config.provider == "axera") {
+#if SHERPA_ONNX_ENABLE_AXERA
+    if (!config.silero_vad.model.empty()) {
+      return std::make_unique<SileroVadModelAxera>(mgr, config);
+    } else {
+      SHERPA_ONNX_LOGE("Only silero-vad is supported for Axera at present");
+      SHERPA_ONNX_EXIT(-1);
+    }
+#else
+    SHERPA_ONNX_LOGE(
+        "Please rebuild sherpa-onnx with -DSHERPA_ONNX_ENABLE_AXERA=ON if you "
+        "want to use axera.");
+    SHERPA_ONNX_EXIT(-1);
+    return nullptr;
+#endif
+  }
+
   if (config.provider == "rknn") {
 #if SHERPA_ONNX_ENABLE_RKNN
     if (!config.silero_vad.model.empty()) {
