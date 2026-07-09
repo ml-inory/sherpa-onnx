@@ -1,0 +1,49 @@
+{
+  "goal": "逐模型将 sherpa-onnx 转为 axmodel，实现 axera C++ backend，上板测试通过。首个模型：Paraformer。",
+  "stack": "C++/CMake + Python (magnetar)",
+  "base_branch": "master",
+  "branch": "feat/build-20260710-0037",
+  "iteration": 1,
+  "validation_command": "交叉编译 build-axera-linux-aarch64.sh 成功 + 上板运行 demo 输出与 ONNX 版本大致一致",
+  "requirement_alignment": {
+    "goal": "按 RKNN 覆盖模型顺序，用 magnetar 转换 axmodel，实现 axera backend，上板验证",
+    "non_goals": "不转换所有 30+ 模型，不做 TTS/Speaker Diarization 等非核心模型",
+    "model_priority": [
+      "Paraformer",
+      "Zipformer CTC",
+      "Zipformer Transducer",
+      "Silero VAD",
+      "Keyword Spotter"
+    ],
+    "target_hardware": "AX650, NPU3",
+    "board": "root@192.168.31.201, password 123456",
+    "acceptance": "AXMODEL 放入 ~/HF/ + README, C++ backend 实现, 交叉编译成功, 上板 demo 识别结果大致一致 (允许量化精度差异)",
+    "first_iteration": "Paraformer 模型转换 + axera backend 实现 + 上板测试"
+  },
+  "issues": [],
+  "rounds": [
+    {
+      "iteration": 1,
+      "model": "Paraformer",
+      "status": "done",
+      "commit": "ad4742d3",
+      "files": [
+        "axera/offline-paraformer-model-axera.h",
+        "axera/offline-paraformer-model-axera.cc",
+        "offline-recognizer-impl.cc",
+        "offline-paraformer-model-config.cc",
+        "CMakeLists.txt"
+      ],
+      "result": "3 axmodels compiled, C++ backend working, board test RTF=0.007, INT8 accuracy noted"
+    }
+  ],
+  "pre_existing_changes": [
+    "AGENTS.md (untracked)"
+  ],
+  "assumptions": [
+    "HF mirror 可用下载 sherpa-onnx Paraformer ONNX",
+    "本机 Pulsar2 Docker 可用",
+    "交叉编译工具链已安装",
+    "板端 192.168.31.201 可 SSH 访问"
+  ]
+}
