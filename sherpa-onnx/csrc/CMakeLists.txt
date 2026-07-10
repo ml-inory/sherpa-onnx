@@ -221,9 +221,11 @@ endif()
 if(SHERPA_ONNX_ENABLE_AXERA)
   list(APPEND sources
     ./axera/ax-engine-guard.cc
+    ./axera/silero-vad-model-axera.cc
     ./axera/offline-paraformer-model-axera.cc
     ./axera/offline-sense-voice-model-axera.cc
     ./axera/offline-ced-model-axera.cc
+    ./axera/speaker-embedding-extractor-model-axera.cc
     ./axera/utils.cc
   )
 endif()
