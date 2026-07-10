@@ -55,6 +55,9 @@ class OfflineRecognizerWenetCtcAxeraImpl : public OfflineRecognizerImpl {
       int32_t feat_dim = s->FeatureDim();
       int32_t num_frames = static_cast<int32_t>(frames.size()) / feat_dim;
 
+      SHERPA_ONNX_LOGE("[WenetAxeraImpl] frames.size()=%zu feat_dim=%d num_frames=%d",
+                       frames.size(), feat_dim, num_frames);
+
       auto [log_probs_vec, output_len] = model_->Run(
           frames.data(), num_frames, feat_dim);
 

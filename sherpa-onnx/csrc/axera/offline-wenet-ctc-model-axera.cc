@@ -51,7 +51,6 @@ class OfflineWenetCtcModelAxera::Impl {
   std::pair<std::vector<float>, int32_t> Run(
       const float *features, int32_t num_frames, int32_t feat_dim) {
     std::lock_guard<std::mutex> lock(mutex_);
-
     if (!io_info_ || io_info_->nInputSize < 2) {
       SHERPA_ONNX_LOGE("Invalid IO info: nInputSize=%d",
                        io_info_ ? io_info_->nInputSize : 0);
@@ -67,29 +66,35 @@ class OfflineWenetCtcModelAxera::Impl {
     // Input 1: speech_lengths (1,) int32
     const auto &in1_meta = io_info_->pInputs[1];
     int32_t speech_len = num_frames;
-    std::memcpy(io_.pInputs[1].pVirAddr, &speech_len, sizeof(int32_t));
-
-    auto ret = AX_ENGINE_RunSync(handle_, &io_);
-    if (ret != 0) {
+    std::memcpy(io_.pInputs[1].pVirAddr, &speech_len, sizeof(int32_t));    auto ret = AX_ENGINE_RunSync(handle_, &io_);    if (ret != 0) {
       SHERPA_ONNX_LOGE("AX_ENGINE_RunSync failed, ret = %d", ret);
       return {{}, 0};
     }
 
-    // Output 0: ctc_log_probs (1, T', vocab_size)
-    const auto &out0_meta = io_info_->pOutputs[0];
-    int32_t num_elements = out0_meta.nSize / sizeof(float);
+    // Output 2: ctc_log_probs (1, T', vocab_size) - from AXERA-TECH encoder
+    SHERPA_ONNX_LOGE("[WenetAxera] Output 2 name=%s nSize=%d",
+                     io_info_->pOutputs[2].pName,
+                     (int)io_info_->pOutputs[2].nSize);
+    const auto &out2_meta = io_info_->pOutputs[2];
+    int32_t num_elements = out2_meta.nSize / sizeof(float);
     std::vector<float> log_probs(num_elements);
-    std::memcpy(log_probs.data(), io_.pOutputs[0].pVirAddr,
+    std::memcpy(log_probs.data(), io_.pOutputs[2].pVirAddr,
                 num_elements * sizeof(float));
 
-    // Output 2: encoder_out_lens (1,) int32
+    // Output 1: encoder_out_lens (1,) int32
+    SHERPA_ONNX_LOGE("[WenetAxera] Output 1 name=%s nSize=%d",
+                     io_info_->pOutputs[1].pName,
+                     (int)io_info_->pOutputs[1].nSize);
     int32_t output_len = 0;
-    if (io_info_->nOutputSize > 2) {
-      output_len = *reinterpret_cast<int32_t *>(io_.pOutputs[2].pVirAddr);
-    } else {
+    if (io_info_->nOutputSize > 1) {
+      output_len = *reinterpret_cast<int32_t *>(io_.pOutputs[1].pVirAddr);
+    }
+    if (output_len <= 0) {
       output_len = num_elements / vocab_size_;
     }
 
+    SHERPA_ONNX_LOGE("[WenetAxera] Returning log_probs.size()=%zu output_len=%d",
+                     log_probs.size(), output_len);
     return {std::move(log_probs), output_len};
   }
 
