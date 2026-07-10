@@ -224,6 +224,7 @@ if(SHERPA_ONNX_ENABLE_AXERA)
     ./axera/silero-vad-model-axera.cc
     ./axera/offline-paraformer-model-axera.cc
     ./axera/offline-sense-voice-model-axera.cc
+    ./axera/offline-ced-model-axera.cc
     ./axera/utils.cc
   )
 endif()

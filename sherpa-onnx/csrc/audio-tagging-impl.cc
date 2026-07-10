@@ -15,6 +15,10 @@
 #include "sherpa-onnx/csrc/audio-tagging-zipformer-impl.h"
 #include "sherpa-onnx/csrc/macros.h"
 
+#ifdef SHERPA_ONNX_ENABLE_AXERA
+#include "sherpa-onnx/csrc/axera/audio-tagging-ced-axera-impl.h"
+#endif
+
 namespace sherpa_onnx {
 
 std::unique_ptr<AudioTaggingImpl> AudioTaggingImpl::Create(
@@ -22,6 +26,11 @@ std::unique_ptr<AudioTaggingImpl> AudioTaggingImpl::Create(
   if (!config.model.zipformer.model.empty()) {
     return std::make_unique<AudioTaggingZipformerImpl>(config);
   } else if (!config.model.ced.empty()) {
+#ifdef SHERPA_ONNX_ENABLE_AXERA
+    if (config.model.provider == "axera") {
+      return std::make_unique<AudioTaggingCedAxeraImpl>(config);
+    }
+#endif
     return std::make_unique<AudioTaggingCEDImpl>(config);
   }
 
