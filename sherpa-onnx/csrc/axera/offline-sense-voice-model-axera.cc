@@ -5,7 +5,6 @@
 #include "sherpa-onnx/csrc/axera/offline-sense-voice-model-axera.h"
 
 #include <algorithm>
-#include <array>
 #include <cstring>
 #include <mutex>
 #include <utility>
@@ -55,34 +54,56 @@ class OfflineSenseVoiceModelAxera::Impl {
 
   std::vector<float> Run(std::vector<float> features, int32_t language,
                          int32_t text_norm) {
-    // TODO(fangjun): Support multi clients
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // Apply LFR (model does CMVN internally)
     features = ApplyLFR(std::move(features));
 
-    std::array<int32_t, 4> prompt{language, 1, 2, text_norm};
-
-    const auto &in0_meta = io_info_->pInputs[0];
-    size_t bytes0 = in0_meta.nSize;
-
-    if (bytes0 != features.size() * sizeof(float)) {
+    int32_t num_frames = features.size() / feat_dim_;
+    if (num_frames > num_input_frames_) {
       SHERPA_ONNX_LOGE(
-          "Feature size mismatch. model expects %u bytes, but got %zu bytes",
-          in0_meta.nSize, features.size() * sizeof(float));
-      SHERPA_ONNX_EXIT(-1);
+          "Input has %d frames but model supports %d. Truncating.",
+          num_frames, num_input_frames_);
+      num_frames = num_input_frames_;
     }
 
-    std::memcpy(io_data_.pInputs[0].pVirAddr, features.data(), bytes0);
+    // Pad features to num_input_frames_
+    std::vector<float> padded(num_input_frames_ * feat_dim_, 0.0f);
+    std::copy(features.data(), features.data() + num_frames * feat_dim_,
+              padded.data());
 
-    const auto &in1_meta = io_info_->pInputs[1];
-    size_t bytes1 = in1_meta.nSize;
-    if (bytes1 != prompt.size() * sizeof(int32_t)) {
-      SHERPA_ONNX_LOGE(
-          "Prompt size mismatch. model expects %u bytes, but got %zu bytes",
-          in1_meta.nSize, prompt.size() * sizeof(int32_t));
+    // Create attention mask: shape [1, 1, num_input_frames_ + 4]
+    std::vector<float> mask((num_input_frames_ + 4), 0.0f);
+    for (int32_t i = 0; i < num_frames + 4; ++i) {
+      mask[i] = 1.0f;
+    }
+
+    // Language token
+    std::vector<int32_t> lang_vec = {language};
+
+    // Copy inputs
+    const auto &in0 = io_info_->pInputs[0];
+    const auto &in1 = io_info_->pInputs[1];
+    const auto &in2 = io_info_->pInputs[2];
+
+    std::memcpy(io_data_.pInputs[0].pVirAddr, padded.data(), in0.nSize);
+
+    // mask is [1, 1, T], stored flat
+    size_t mask_bytes = mask.size() * sizeof(float);
+    if (mask_bytes != in1.nSize) {
+      SHERPA_ONNX_LOGE("Mask size mismatch: expected %u, got %zu", in1.nSize,
+                       mask_bytes);
       SHERPA_ONNX_EXIT(-1);
     }
-    std::memcpy(io_data_.pInputs[1].pVirAddr, prompt.data(), bytes1);
+    std::memcpy(io_data_.pInputs[1].pVirAddr, mask.data(), mask_bytes);
+
+    size_t lang_bytes = lang_vec.size() * sizeof(int32_t);
+    if (lang_bytes != in2.nSize) {
+      SHERPA_ONNX_LOGE("Language size mismatch: expected %u, got %zu",
+                       in2.nSize, lang_bytes);
+      SHERPA_ONNX_EXIT(-1);
+    }
+    std::memcpy(io_data_.pInputs[2].pVirAddr, lang_vec.data(), lang_bytes);
 
     auto ret = AX_ENGINE_RunSync(handle_, &io_data_);
     if (ret != 0) {
@@ -90,46 +111,59 @@ class OfflineSenseVoiceModelAxera::Impl {
       SHERPA_ONNX_EXIT(-1);
     }
 
-    const auto &out_meta = io_info_->pOutputs[0];
-    auto &out_buf = io_data_.pOutputs[0];
-
-    size_t out_elems = out_meta.nSize / sizeof(float);
-    std::vector<float> out(out_elems);
-
-    std::memcpy(out.data(), out_buf.pVirAddr, out_meta.nSize);
+    // Read ctc_logits output
+    const auto &out0 = io_info_->pOutputs[0];
+    auto &out_buf0 = io_data_.pOutputs[0];
+    size_t out0_elems = out0.nSize / sizeof(float);
+    std::vector<float> out(out0_elems);
+    std::memcpy(out.data(), out_buf0.pVirAddr, out0.nSize);
 
     return out;
   }
 
  private:
   void Init(void *model_data, size_t model_data_length) {
+    // SenseVoice metadata
+    meta_data_.window_size = 7;
+    meta_data_.window_shift = 6;
+    meta_data_.vocab_size = 25055;
+    meta_data_.normalize_samples = 0;
+    meta_data_.blank_id = 0;
+    meta_data_.lang2id = {{"auto", 0}, {"zh", 3},   {"en", 4},
+                          {"yue", 7},  {"ja", 11},   {"ko", 12}};
+    meta_data_.with_itn_id = 14;
+    meta_data_.without_itn_id = 15;
+    meta_data_.is_funasr_nano = false;
+
     InitContext(model_data, model_data_length, config_.debug, &handle_);
-
     InitInputOutputAttrs(handle_, config_.debug, &io_info_);
-
     PrepareIO(io_info_, &io_data_, config_.debug);
 
-    if (!io_info_ || io_info_->nInputSize != 2 || !io_info_->pInputs) {
-      SHERPA_ONNX_LOGE("No input tensor in Axera model");
+    if (!io_info_ || io_info_->nInputSize != 3 || !io_info_->pInputs) {
+      SHERPA_ONNX_LOGE("SenseVoice axera model expects 3 input tensors, got %u",
+                       io_info_ ? io_info_->nInputSize : 0);
       SHERPA_ONNX_EXIT(-1);
     }
 
+    // speech input: [1, num_frames, 560]
     auto &in0 = io_info_->pInputs[0];
-    if (in0.nShapeSize < 2) {
-      SHERPA_ONNX_LOGE("Input tensor rank is too small (nShapeSize = %u)",
+    if (in0.nShapeSize < 3) {
+      SHERPA_ONNX_LOGE("Speech input rank too small (nShapeSize = %u)",
                        in0.nShapeSize);
       SHERPA_ONNX_EXIT(-1);
     }
     num_input_frames_ = in0.pShape[1];
+    feat_dim_ = in0.pShape[2];
 
-    if (io_info_->nOutputSize != 1) {
-      SHERPA_ONNX_LOGE("Axera sense voice model expected only 1 output tensor");
+    if (io_info_->nOutputSize < 1) {
+      SHERPA_ONNX_LOGE("SenseVoice axera model expects at least 1 output");
       SHERPA_ONNX_EXIT(-1);
     }
 
     if (config_.debug) {
       SHERPA_ONNX_LOGE("Axera SenseVoice model init done.");
-      SHERPA_ONNX_LOGE("  num_input_frames_ = %d", num_input_frames_);
+      SHERPA_ONNX_LOGE("  num_input_frames = %d, feat_dim = %d",
+                       num_input_frames_, feat_dim_);
     }
   }
 
@@ -140,19 +174,9 @@ class OfflineSenseVoiceModelAxera::Impl {
     int32_t in_num_frames = in.size() / in_feat_dim;
     int32_t out_num_frames =
         (in_num_frames - lfr_window_size) / lfr_window_shift + 1;
-
-    if (out_num_frames > num_input_frames_) {
-      SHERPA_ONNX_LOGE(
-          "Number of input frames %d is too large. Truncate it to %d frames.",
-          out_num_frames, num_input_frames_);
-      SHERPA_ONNX_LOGE(
-          "Recognition result may be truncated/incomplete. Please select a "
-          "model accepting longer audios.");
-      out_num_frames = num_input_frames_;
-    }
-
     int32_t out_feat_dim = in_feat_dim * lfr_window_size;
-    std::vector<float> out(num_input_frames_ * out_feat_dim);
+
+    std::vector<float> out(out_num_frames * out_feat_dim);
     const float *p_in = in.data();
     float *p_out = out.data();
 
@@ -165,7 +189,6 @@ class OfflineSenseVoiceModelAxera::Impl {
     return out;
   }
 
- private:
   std::mutex mutex_;
   AxEngineGuard ax_engine_guard_;
 
@@ -175,6 +198,7 @@ class OfflineSenseVoiceModelAxera::Impl {
   AX_ENGINE_IO_T io_data_;
   OfflineSenseVoiceModelMetaData meta_data_;
   int32_t num_input_frames_ = -1;
+  int32_t feat_dim_ = 0;
 };
 
 OfflineSenseVoiceModelAxera::~OfflineSenseVoiceModelAxera() = default;
@@ -188,9 +212,8 @@ OfflineSenseVoiceModelAxera::OfflineSenseVoiceModelAxera(
     Manager *mgr, const OfflineModelConfig &config)
     : impl_(std::make_unique<Impl>(mgr, config)) {}
 
-std::vector<float> OfflineSenseVoiceModelAxera::Run(std::vector<float> features,
-                                                    int32_t language,
-                                                    int32_t text_norm) const {
+std::vector<float> OfflineSenseVoiceModelAxera::Run(
+    std::vector<float> features, int32_t language, int32_t text_norm) const {
   return impl_->Run(std::move(features), language, text_norm);
 }
 
