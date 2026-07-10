@@ -23,6 +23,10 @@
 #include "sherpa-onnx/csrc/speaker-embedding-extractor-nemo-impl.h"
 #include "sherpa-onnx/csrc/text-utils.h"
 
+#ifdef SHERPA_ONNX_ENABLE_AXERA
+#include "sherpa-onnx/csrc/axera/speaker-embedding-extractor-model-axera.h"
+#endif
+
 namespace sherpa_onnx {
 
 namespace {
@@ -141,6 +145,12 @@ static ModelType GetModelType(char *model_data, size_t model_data_length,
 std::unique_ptr<SpeakerEmbeddingExtractorImpl>
 SpeakerEmbeddingExtractorImpl::Create(
     const SpeakerEmbeddingExtractorConfig &config) {
+#ifdef SHERPA_ONNX_ENABLE_AXERA
+  if (config.provider == "axera") {
+    return std::make_unique<SpeakerEmbeddingExtractorAxeraImpl>(config);
+  }
+#endif
+
   ModelType model_type = ModelType::kUnknown;
 
   {
