@@ -226,6 +226,7 @@ if(SHERPA_ONNX_ENABLE_AXERA)
     ./axera/offline-sense-voice-model-axera.cc
     ./axera/offline-ced-model-axera.cc
     ./axera/speaker-embedding-extractor-model-axera.cc
+    ./axera/offline-wenet-ctc-model-axera.cc
     ./axera/utils.cc
   )
 endif()

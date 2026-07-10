@@ -54,6 +54,7 @@
 #if SHERPA_ONNX_ENABLE_AXERA
 #include "sherpa-onnx/csrc/axera/offline-sense-voice-model-axera.h"
 #include "sherpa-onnx/csrc/axera/offline-paraformer-model-axera.h"
+#include "sherpa-onnx/csrc/axera/offline-recognizer-wenet-ctc-axera-impl.h"
 #endif
 
 #if SHERPA_ONNX_ENABLE_AXCL
@@ -118,10 +119,12 @@ std::unique_ptr<OfflineRecognizerImpl> OfflineRecognizerImpl::Create(
       return std::make_unique<
           OfflineRecognizerParaformerTplImpl<OfflineParaformerModelAxera>>(
           config);
+    } else if (!config.model_config.wenet_ctc.model.empty()) {
+      return std::make_unique<OfflineRecognizerWenetCtcAxeraImpl>(config);
     } else {
       SHERPA_ONNX_LOGE(
-          "Only SenseVoice models are currently supported by Axera NPU for "
-          "non-streaming ASR.");
+          "Only SenseVoice, Paraformer and WeNet CTC models are currently "
+          "supported by Axera NPU for non-streaming ASR.");
       SHERPA_ONNX_EXIT(-1);
       return nullptr;
     }
@@ -483,10 +486,12 @@ std::unique_ptr<OfflineRecognizerImpl> OfflineRecognizerImpl::Create(
       return std::make_unique<
           OfflineRecognizerParaformerTplImpl<OfflineParaformerModelAxera>>(
           mgr, config);
+    } else if (!config.model_config.wenet_ctc.model.empty()) {
+      return std::make_unique<OfflineRecognizerWenetCtcAxeraImpl>(mgr, config);
     } else {
       SHERPA_ONNX_LOGE(
-          "Only SenseVoice models are currently supported by Axera NPU for "
-          "non-streaming ASR.");
+          "Only SenseVoice, Paraformer and WeNet CTC models are currently "
+          "supported by Axera NPU for non-streaming ASR.");
       SHERPA_ONNX_EXIT(-1);
       return nullptr;
     }
